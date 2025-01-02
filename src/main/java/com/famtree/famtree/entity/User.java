@@ -1,21 +1,16 @@
 package com.famtree.famtree.entity;
 
-import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.famtree.famtree.enums.Gender;
 import com.famtree.famtree.enums.MaritalStatus;
 import com.famtree.famtree.enums.UserRole;
-import com.famtree.famtree.util.UidGenerator;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.Builder;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Entity
 @Data
@@ -40,6 +35,8 @@ public class User {
     private String firstName;
     private String lastName;
     private String email;
+    private String password;
+    
     private String mobile;
     private LocalDate dateOfBirth;
     private String occupation;

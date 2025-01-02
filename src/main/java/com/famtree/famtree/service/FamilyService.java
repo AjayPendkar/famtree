@@ -54,23 +54,33 @@ public class FamilyService {
             User existingUser = userRepository.findByMobile(mobile)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            // Create or update family
-            Family family = existingUser.getFamily();
-            if (family == null) {
-                family = new Family();
-                family.setFamilyUid(UidGenerator.generateFamilyId());
-                family.setUniqueIdentifier(UidGenerator.generateFamilyId());
+            // Check if this is a first-time registration
+            if (existingUser.getFamily() != null && existingUser.isVerified()) {
+                // For existing registrations, return minimal response with just mobile
+                return FamilyResponse.builder()
+                    .familyHead(FamilyResponse.UserResponse.builder()
+                        .mobile(mobile)
+                        .isVerified(true)
+                        .build())
+                    .build();
             }
-            
+
+            // This is a new registration
+            Family family = new Family();
+            family.setFamilyUid(UidGenerator.generateFamilyId());
+            family.setUniqueIdentifier(family.getFamilyUid());
             family.setFamilyName(request.getFamilyName());
             family.setAddress(request.getAddress());
             family.setDescription(request.getDescription());
-            family.setTotalMemberCount(request.getMemberCount() + 1); // +1 for head
+            family.setTotalMemberCount(request.getMemberCount() + 1);
             family = familyRepository.save(family);
-            System.out.println("Saved family: " + family.getFamilyName());
-
+            
             // Update head details
             UserDetailsRequest headDetails = request.getFamilyHead();
+            if (existingUser.getUserUid() == null) {
+                existingUser.setUserUid(UidGenerator.generateUserId());
+                existingUser.setMemberUid(UidGenerator.generateMemberId());
+            }
             existingUser.setFirstName(headDetails.getFirstName());
             existingUser.setLastName(headDetails.getLastName());
             existingUser.setEmail(headDetails.getEmail());
@@ -82,40 +92,23 @@ public class FamilyService {
             existingUser.setFamily(family);
             existingUser.setFamilyHead(true);
             existingUser.setRole(UserRole.HEAD);
+            existingUser.setVerified(true);
             existingUser = userRepository.save(existingUser);
-            System.out.println("Updated head: " + existingUser.getFirstName());
 
             List<FamilyResponse.MemberResponse> memberResponses = new ArrayList<>();
             
             // Handle members
             if (request.getMembers() != null) {
-                // Clear existing pending members first
-                pendingMemberRepository.deleteByFamily(family);
-                
+                final Family finalFamily = family;
                 for (BasicMemberRequest memberRequest : request.getMembers()) {
-                    // Skip if member already exists as verified user
-                    if (userRepository.existsByMobile(memberRequest.getMobile())) {
-                        continue;
-                    }
-                    
-                    // Check if pending member already exists
-                    PendingMember pendingMember = pendingMemberRepository
-                        .findByMobileAndFamily(memberRequest.getMobile(), family)
-                        .orElse(new PendingMember());
-                    
-                    pendingMember.setFamily(family);
+                    PendingMember pendingMember = new PendingMember();
+                    pendingMember.setFamily(finalFamily);
+                    pendingMember.setMemberUid(UidGenerator.generateMemberId());
+                    pendingMember.setVerificationCode(UidGenerator.generateVerificationCode());
                     pendingMember.setFirstName(memberRequest.getFirstName());
                     pendingMember.setMobile(memberRequest.getMobile());
                     pendingMember.setRelation(memberRequest.getRelation());
-                    
-                    // Only generate new IDs if this is a new pending member
-                    if (pendingMember.getMemberUid() == null) {
-                        pendingMember.setMemberUid(UidGenerator.generateMemberId());
-                        pendingMember.setVerificationCode(UidGenerator.generateVerificationCode());
-                    }
-                    
                     pendingMember = pendingMemberRepository.save(pendingMember);
-                    System.out.println("Added/Updated pending member: " + pendingMember.getFirstName());
                     
                     memberResponses.add(FamilyResponse.MemberResponse.builder()
                         .firstName(pendingMember.getFirstName())
@@ -126,12 +119,27 @@ public class FamilyService {
                 }
             }
 
+            // Build complete response with all data
             return FamilyResponse.builder()
                     .familyUid(family.getFamilyUid())
                     .familyName(family.getFamilyName())
                     .address(family.getAddress())
                     .description(family.getDescription())
-                    .familyHead(mapUserToResponse(existingUser))
+                    .familyHead(FamilyResponse.UserResponse.builder()
+                        .userUid(existingUser.getUserUid())
+                        .memberUid(existingUser.getMemberUid())
+                        .firstName(existingUser.getFirstName())
+                        .lastName(existingUser.getLastName())
+                        .email(existingUser.getEmail())
+                        .mobile(existingUser.getMobile())
+                        .dateOfBirth(existingUser.getDateOfBirth())
+                        .occupation(existingUser.getOccupation())
+                        .education(existingUser.getEducation())
+                        .gender(existingUser.getGender())
+                        .maritalStatus(existingUser.getMaritalStatus())
+                        .role(existingUser.getRole())
+                        .isVerified(existingUser.isVerified())
+                        .build())
                     .members(memberResponses.isEmpty() ? null : memberResponses)
                     .build();
         } catch (Exception e) {
@@ -207,9 +215,10 @@ public class FamilyService {
             family.setAddress(request.getAddress());
             family.setDescription(request.getDescription());
             family.setTotalMemberCount(request.getMemberCount() + 1); // +1 for head
-            familyRepository.save(family);
+            final Family savedFamily = familyRepository.save(family);
 
             // Handle member updates if provided
+            List<FamilyResponse.MemberResponse> memberResponses = new ArrayList<>();
             if (request.getMembers() != null) {
                 for (BasicMemberRequest memberRequest : request.getMembers()) {
                     // Skip if member already exists as verified user
@@ -219,47 +228,53 @@ public class FamilyService {
                     
                     // Update or create pending member
                     PendingMember pendingMember = pendingMemberRepository
-                        .findByMobileAndIsVerifiedFalse(memberRequest.getMobile())
-                        .orElse(new PendingMember());
+                        .findByMobileAndFamily(memberRequest.getMobile(), savedFamily)
+                        .orElseGet(() -> {
+                            PendingMember newMember = new PendingMember();
+                            newMember.setFamily(savedFamily);
+                            newMember.setMemberUid(UidGenerator.generateMemberId());
+                            newMember.setVerificationCode(UidGenerator.generateVerificationCode());
+                            return newMember;
+                        });
                     
-                    pendingMember.setFamily(family);
                     pendingMember.setFirstName(memberRequest.getFirstName());
                     pendingMember.setMobile(memberRequest.getMobile());
                     pendingMember.setRelation(memberRequest.getRelation());
-                    if (pendingMember.getVerificationCode() == null) {
-                        pendingMember.setVerificationCode(generateVerificationCode());
-                    }
-                    pendingMemberRepository.save(pendingMember);
+                    pendingMember = pendingMemberRepository.save(pendingMember);
+                    
+                    memberResponses.add(FamilyResponse.MemberResponse.builder()
+                        .firstName(pendingMember.getFirstName())
+                        .mobile(pendingMember.getMobile())
+                        .relation(pendingMember.getRelation())
+                        .verificationCode(pendingMember.getVerificationCode())
+                        .build());
                 }
             }
 
-            userRepository.save(user);
+            user = userRepository.save(user);
             
+            // Build complete response
             return FamilyResponse.builder()
-                    .familyUid(family.getFamilyUid())
-                    .familyName(family.getFamilyName())
-                    .address(family.getAddress())
-                    .description(family.getDescription())
+                    .familyUid(savedFamily.getFamilyUid())
+                    .familyName(savedFamily.getFamilyName())
+                    .address(savedFamily.getAddress())
+                    .description(savedFamily.getDescription())
                     .familyHead(FamilyResponse.UserResponse.builder()
-                            .userUid(user.getUserUid())
-                            .memberUid(user.getMemberUid())
-                            .firstName(user.getFirstName())
-                            .lastName(user.getLastName())
-                            .email(user.getEmail())
-                            .mobile(user.getMobile())
-                            .nationalId(user.getNationalId())
-                            .passportNumber(user.getPassportNumber())
-                            .voterId(user.getVoterId())
-                            .birthCertificateId(user.getBirthCertificateId())
-                            .dateOfBirth(user.getDateOfBirth())
-                            .occupation(user.getOccupation())
-                            .education(user.getEducation())
-                            .gender(user.getGender())
-                            .maritalStatus(user.getMaritalStatus())
-                            .address(user.getAddress())
-                            .role(user.getRole())
-                            .isVerified(user.isVerified())
-                            .build())
+                        .userUid(user.getUserUid())
+                        .memberUid(user.getMemberUid())
+                        .firstName(user.getFirstName())
+                        .lastName(user.getLastName())
+                        .email(user.getEmail())
+                        .mobile(user.getMobile())
+                        .dateOfBirth(user.getDateOfBirth())
+                        .occupation(user.getOccupation())
+                        .education(user.getEducation())
+                        .gender(user.getGender())
+                        .maritalStatus(user.getMaritalStatus())
+                        .role(user.getRole())
+                        .isVerified(user.isVerified())
+                        .build())
+                    .members(memberResponses.isEmpty() ? null : memberResponses)
                     .build();
         } catch (InvalidTokenException e) {
             throw e;

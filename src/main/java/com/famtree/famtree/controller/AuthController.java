@@ -3,6 +3,7 @@ package com.famtree.famtree.controller;
 import com.famtree.famtree.dto.ApiResponse;
 import com.famtree.famtree.dto.AuthResponse;
 import com.famtree.famtree.dto.InitialRegistrationRequest;
+import com.famtree.famtree.dto.AdminAuthRequest;
 import com.famtree.famtree.service.AuthService;
 import com.famtree.famtree.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,36 @@ import java.util.HashMap;
 public class AuthController {
     private final AuthService authService;
     private final UserRepository userRepository;
+
+    @PostMapping("/admin/register")
+    public ResponseEntity<ApiResponse<AuthResponse>> registerAdmin(@RequestBody AdminAuthRequest request) {
+        try {
+            AuthResponse response = authService.registerAdmin(request);
+            return ResponseEntity.ok(ApiResponse.success(
+                response,
+                "Admin registered successfully"
+            ));
+        } catch (RuntimeException e) {
+            return ResponseEntity
+                .badRequest()
+                .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
+        }
+    }
+
+    @PostMapping("/admin/login")
+    public ResponseEntity<ApiResponse<AuthResponse>> loginAdmin(@RequestBody AdminAuthRequest request) {
+        try {
+            AuthResponse response = authService.loginAdmin(request);
+            return ResponseEntity.ok(ApiResponse.success(
+                response,
+                "Admin logged in successfully"
+            ));
+        } catch (RuntimeException e) {
+            return ResponseEntity
+                .badRequest()
+                .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
+        }
+    }
 
     @PostMapping("/send-otp")
     public ResponseEntity<ApiResponse<AuthResponse>> sendOtp(@RequestBody InitialRegistrationRequest request) {

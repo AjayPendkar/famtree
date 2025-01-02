@@ -23,12 +23,12 @@ public class FamilyController {
             @RequestBody FamilyDetailsRequest request) {
         try {
             FamilyResponse response = familyService.completeFamilyRegistration(token, request);
-            if (response.getFamilyHead().getFirstName() != null) {
-                // Return 200 with existing data
+            if (response.getFamilyHead() != null && response.getFamilyHead().isVerified()) {
+                // Return 200 with just a message for existing registrations
                 return ResponseEntity.ok(ApiResponse.builder()
                     .status(HttpStatus.OK.value())
-                    .message("Existing family registration found")
-                    .data(response)
+                    .message("User already registered as family head")
+                    .data(null)
                     .build());
             }
             return ResponseEntity.ok(ApiResponse.success(response, "Family registration completed successfully"));

@@ -1,6 +1,7 @@
 package com.famtree.famtree.service;
 
 import com.famtree.famtree.dto.InitialRegistrationRequest;
+import com.famtree.famtree.dto.AdminAuthRequest;
 import com.famtree.famtree.entity.Family;
 import com.famtree.famtree.entity.User;
 import com.famtree.famtree.enums.UserRole;
@@ -11,9 +12,13 @@ import com.famtree.famtree.security.JwtUtil;
 import com.famtree.famtree.dto.AuthResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.famtree.famtree.dto.AuthRequest;
+import jakarta.persistence.EntityManager;
+import jakarta.annotation.PostConstruct;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -33,6 +38,28 @@ public class AuthService {
     private final FamilyRepository familyRepository;
     private final PendingMemberRepository pendingMemberRepository;
     private final JwtUtil jwtUtil;
+    private final PasswordEncoder passwordEncoder;
+    
+    @Autowired
+    private EntityManager entityManager;
+
+    @PostConstruct
+    @Transactional
+    public void initializeDatabase() {
+        try {
+            // Drop existing constraint
+            entityManager.createNativeQuery(
+                "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check"
+            ).executeUpdate();
+
+            // Add new constraint
+            entityManager.createNativeQuery(
+                "ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('SUPER_ADMIN', 'ADMIN', 'HEAD', 'MEMBER'))"
+            ).executeUpdate();
+        } catch (Exception e) {
+            log.error("Error initializing database: ", e);
+        }
+    }
 
     @Transactional
     public AuthResponse sendOtp(InitialRegistrationRequest request) {
@@ -43,13 +70,9 @@ public class AuthService {
             // Generate OTP
             String otp = generateOtp();
             
-            // Determine role
-            String role = "MEMBER";  // Default role is MEMBER
-            
             if (existingUser.isPresent()) {
                 User user = existingUser.get();
                 // If user exists, use their actual role
-                role = user.isFamilyHead() ? "HEAD" : "MEMBER";
                 
                 // Update existing user's OTP
                 user.setOtp(otp);
@@ -66,19 +89,18 @@ public class AuthService {
                     .otp(otp)
                     .expiryTime(LocalDateTime.now().plusMinutes(5))
                     .isVerified(false)
-                    .isFamilyHead(request.isFamilyHead())
-                    .role(request.isFamilyHead() ? UserRole.HEAD : UserRole.MEMBER)
+                    .isFamilyHead(request.getRole() == UserRole.HEAD)
+                    .role(request.getRole())
                     .firstName(request.getFamilyName())  // Store family name
                     .build();
                 
                 userRepository.save(newUser);
-                role = request.isFamilyHead() ? "HEAD" : "MEMBER";
             }
 
             return AuthResponse.builder()
                 .message("OTP sent successfully")
                 .otp(otp)
-                .role(role)
+                .role(request.getRole().toString())
                 .familyName(request.getFamilyName())
                 .success(true)
                 .build();
@@ -182,5 +204,66 @@ public class AuthService {
             log.error("Error in registration: ", e);
             throw new RuntimeException("Registration failed: " + e.getMessage());
         }
+    }
+
+    @Transactional
+    public AuthResponse registerAdmin(AdminAuthRequest request) {
+        // Check if admin exists
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new RuntimeException("Email already registered");
+        }
+
+        // For first time setup, check if there's any SUPER_ADMIN
+        if (request.getRole() == UserRole.SUPER_ADMIN && 
+            userRepository.existsByRole(UserRole.SUPER_ADMIN)) {
+            throw new RuntimeException("Super Admin already exists");
+        }
+
+        // Create new admin user
+        User admin = User.builder()
+            .email(request.getEmail())
+            .password(passwordEncoder.encode(request.getPassword()))
+            .firstName(request.getFirstName())
+            .lastName(request.getLastName())
+            .role(request.getRole())
+            .userUid(UidGenerator.generateUserId())
+            .isVerified(true)
+            .build();
+
+        // Generate token
+        String token = jwtUtil.generateToken(admin.getEmail());
+        admin.setCurrentToken(token);
+        
+        userRepository.save(admin);
+
+        return AuthResponse.builder()
+            .token(token)
+            .role(admin.getRole().toString())
+            .success(true)
+            .build();
+    }
+
+    @Transactional
+    public AuthResponse loginAdmin(AdminAuthRequest request) {
+        User admin = userRepository.findByEmail(request.getEmail())
+            .orElseThrow(() -> new RuntimeException("Invalid credentials"));
+
+        if (!passwordEncoder.matches(request.getPassword(), admin.getPassword())) {
+            throw new RuntimeException("Invalid credentials");
+        }
+
+        if (admin.getRole() != UserRole.SUPER_ADMIN && admin.getRole() != UserRole.ADMIN) {
+            throw new RuntimeException("Unauthorized access");
+        }
+
+        String token = jwtUtil.generateToken(admin.getEmail());
+        admin.setCurrentToken(token);
+        userRepository.save(admin);
+
+        return AuthResponse.builder()
+            .token(token)
+            .role(admin.getRole().toString())
+            .success(true)
+            .build();
     }
 } 
