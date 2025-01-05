@@ -23,7 +23,7 @@ public class FamilyController {
             @RequestBody FamilyDetailsRequest request) {
         try {
             FamilyResponse response = familyService.completeFamilyRegistration(token, request);
-            if (response.getFamilyHead() != null && response.getFamilyHead().isVerified()) {
+            if (response.getFamilyHead() != null && response.getFamilyHead().isVerified() && response.getFamilyUid() == null) {
                 // Return 200 with just a message for existing registrations
                 return ResponseEntity.ok(ApiResponse.builder()
                     .status(HttpStatus.OK.value())
