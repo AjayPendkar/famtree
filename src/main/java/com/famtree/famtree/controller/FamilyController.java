@@ -3,6 +3,8 @@ package com.famtree.famtree.controller;
 import com.famtree.famtree.dto.ApiResponse;
 import com.famtree.famtree.dto.FamilyResponse;
 import com.famtree.famtree.dto.FamilyHeadResponse;
+import com.famtree.famtree.dto.PendingMemberRequest;
+import com.famtree.famtree.dto.PendingMemberResponse;
 import com.famtree.famtree.service.FamilyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -69,6 +71,20 @@ public class FamilyController {
         } catch (RuntimeException e) {
             return ResponseEntity
                 .badRequest()
+                .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
+        }
+    }
+
+    @PostMapping("/members/pending")
+    public ResponseEntity<ApiResponse<?>> addPendingMember(
+            @RequestHeader("Authorization") String token,
+            @RequestParam String familyUid,
+            @RequestBody PendingMemberRequest request) {
+        try {
+            PendingMemberResponse response = familyService.addPendingMember(token, familyUid, request);
+            return ResponseEntity.ok(ApiResponse.success(response, "Pending member added successfully"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest()
                 .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
         }
     }
