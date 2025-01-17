@@ -2,8 +2,13 @@ package com.famtree.famtree.controller;
 
 import com.famtree.famtree.dto.ApiResponse;
 import com.famtree.famtree.dto.AuthResponse;
+import com.famtree.famtree.dto.OtpResponse;
+import com.famtree.famtree.dto.OtpRequest;
+import com.famtree.famtree.dto.OtpVerificationRequest;
 import com.famtree.famtree.dto.InitialRegistrationRequest;
 import com.famtree.famtree.dto.AdminAuthRequest;
+import com.famtree.famtree.dto.MobileLoginRequest;
+import com.famtree.famtree.dto.LoginResponse;
 import com.famtree.famtree.service.AuthService;
 import com.famtree.famtree.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -52,35 +57,13 @@ public class AuthController {
     }
 
     @PostMapping("/send-otp")
-    public ResponseEntity<ApiResponse<AuthResponse>> sendOtp(@RequestBody InitialRegistrationRequest request) {
-        try {
-            AuthResponse response = authService.sendOtp(request);
-            return ResponseEntity.ok(ApiResponse.success(
-                response,
-                "OTP sent successfully"
-            ));
-        } catch (RuntimeException e) {
-            return ResponseEntity
-                .badRequest()
-                .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
-        }
+    public ResponseEntity<ApiResponse<OtpResponse>> sendOtp(@RequestBody OtpRequest request) {
+        return ResponseEntity.ok(authService.handleOtpRequest(request));
     }
 
     @PostMapping("/verify-otp")
-    public ResponseEntity<ApiResponse<AuthResponse>> verifyOtp(@RequestBody Map<String, String> request) {
-        try {
-            AuthResponse response = authService.verifyOtp(request.get("mobile"), request.get("otp"));
-            return response.isSuccess() 
-                ? ResponseEntity.ok(ApiResponse.success(
-                    response,
-                    "OTP verified successfully"
-                ))
-                : ResponseEntity.badRequest().body(ApiResponse.error(response.getMessage(), HttpStatus.BAD_REQUEST));
-        } catch (RuntimeException e) {
-            return ResponseEntity
-                .badRequest()
-                .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
-        }
+    public ResponseEntity<ApiResponse<OtpResponse>> verifyOtp(@RequestBody OtpVerificationRequest request) {
+        return ResponseEntity.ok(authService.verifyOtp(request));
     }
 
     @GetMapping("/check-user/{mobile}")
@@ -94,5 +77,15 @@ public class AuthController {
         response.put("exists", exists);
         
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/mobile/login")
+    public ResponseEntity<ApiResponse<LoginResponse>> mobileLogin(@RequestBody MobileLoginRequest request) {
+        return ResponseEntity.ok(authService.mobileLogin(request));
+    }
+
+    @PostMapping("/mobile/login/send-otp")
+    public ResponseEntity<ApiResponse<OtpResponse>> sendLoginOtp(@RequestBody OtpRequest request) {
+        return ResponseEntity.ok(authService.sendLoginOtp(request));
     }
 } 

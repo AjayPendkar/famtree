@@ -1,8 +1,7 @@
 package com.famtree.famtree.dto;
 
-import lombok.Builder;
 import lombok.Data;
-import org.springframework.http.HttpStatus;
+import lombok.Builder;
 
 @Data
 @Builder

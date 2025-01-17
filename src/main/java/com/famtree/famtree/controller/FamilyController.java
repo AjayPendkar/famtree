@@ -61,7 +61,7 @@ public class FamilyController {
         }
     }
 
-    @PutMapping("/update-complete-registration")
+    @PutMapping("update/complete-registration")
     public ResponseEntity<ApiResponse<?>> updateCompleteRegistration(
             @RequestHeader("Authorization") String token,
             @RequestBody FamilyDetailsRequest request) {

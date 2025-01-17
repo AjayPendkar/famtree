@@ -1,6 +1,5 @@
 package com.famtree.famtree.service;
 
-import com.famtree.famtree.dto.InitialRegistrationRequest;
 import com.famtree.famtree.dto.AdminAuthRequest;
 import com.famtree.famtree.entity.Family;
 import com.famtree.famtree.entity.User;
@@ -19,6 +18,16 @@ import com.famtree.famtree.dto.AuthRequest;
 import jakarta.persistence.EntityManager;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.famtree.famtree.dto.OtpRequest;
+import com.famtree.famtree.dto.OtpResponse;
+import com.famtree.famtree.dto.ApiResponse;
+import org.springframework.http.HttpStatus;
+import com.famtree.famtree.dto.OtpVerificationRequest;
+import com.famtree.famtree.dto.MobileLoginRequest;
+import com.famtree.famtree.dto.LoginResponse;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -29,6 +38,7 @@ import com.famtree.famtree.enums.MaritalStatus;
 import java.util.Optional;
 import java.time.LocalDateTime;
 import com.famtree.famtree.util.UidGenerator;
+import java.time.format.DateTimeFormatter;
 
 @Service
 @RequiredArgsConstructor
@@ -62,107 +72,121 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthResponse sendOtp(InitialRegistrationRequest request) {
+    public ApiResponse<OtpResponse> sendOtp(OtpRequest request) {
         try {
-            // Check if user exists
-            Optional<User> existingUser = userRepository.findByMobile(request.getMobile());
-            
-            // Generate OTP
-            String otp = generateOtp();
-            
-            if (existingUser.isPresent()) {
-                User user = existingUser.get();
-                // If user exists, use their actual role
-                
-                // Update existing user's OTP
-                user.setOtp(otp);
-                user.setExpiryTime(LocalDateTime.now().plusMinutes(5));
-                // Store family name if not already set
-                if (user.getFamily() == null && request.getFamilyName() != null) {
-                    user.setFirstName(request.getFamilyName());  // Store temporarily
-                }
-                userRepository.save(user);
-            } else {
-                // Create new user
-                User newUser = User.builder()
-                    .mobile(request.getMobile())
-                    .otp(otp)
-                    .expiryTime(LocalDateTime.now().plusMinutes(5))
-                    .isVerified(false)
-                    .isFamilyHead(request.getRole() == UserRole.HEAD)
-                    .role(request.getRole())
-                    .firstName(request.getFamilyName())  // Store family name
-                    .build();
-                
-                userRepository.save(newUser);
+            // Validate request
+            if (request.getMobile() == null || request.getMobile().trim().isEmpty()) {
+                throw new RuntimeException("Mobile number is required");
             }
 
-            return AuthResponse.builder()
-                .message("OTP sent successfully")
-                .otp(otp)
-                .role(request.getRole().toString())
-                .familyName(request.getFamilyName())
-                .success(true)
-                .build();
+            // Check if new user
+            boolean isNewUser = !userRepository.existsByMobile(request.getMobile());
             
+            if (isNewUser) {
+                // Validate required fields for new registration
+                if (request.getRole() == null) {
+                    throw new RuntimeException("Please select role (HEAD/MEMBER) for new registration");
+                }
+                if (request.getFamilyName() == null || request.getFamilyName().trim().isEmpty()) {
+                    throw new RuntimeException("Please enter family name for new registration");
+                }
+            }
+
+            String otp = generateOtp();
+            User user = userRepository.findByMobile(request.getMobile())
+                .orElseGet(() -> {
+                    // Create new user
+                    User newUser = new User();
+                    newUser.setMobile(request.getMobile());
+                    newUser.setRole(UserRole.valueOf(request.getRole().toUpperCase()));
+                    newUser.setFirstName(request.getFamilyName());
+                    newUser.setUserUid(UidGenerator.generateUserId());
+                    newUser.setMemberUid(UidGenerator.generateMemberId());
+                    newUser.setFamilyHead(UserRole.valueOf(request.getRole().toUpperCase()) == UserRole.HEAD);
+                    return userRepository.save(newUser);
+                });
+            
+            user.setOtp(otp);
+            user.setExpiryTime(LocalDateTime.now().plusMinutes(5));
+            userRepository.save(user);
+
+            return ApiResponse.success(
+                OtpResponse.builder()
+                    .message("OTP sent successfully")
+                    .otp(otp)  // Remove in production
+                    .role(user.getRole().toString())
+                    .familyName(user.getFirstName())
+                    .mobile(user.getMobile())
+                    .isVerified(user.isVerified())
+                    .isFamilyHead(user.isFamilyHead())
+                    .success(true)
+                    .build(),
+                isNewUser ? "New user registration initiated" : "OTP sent successfully"
+            );
+        } catch (IllegalArgumentException e) {
+            throw new RuntimeException("Invalid role. Please use HEAD or MEMBER");
         } catch (Exception e) {
-            log.error("Error sending OTP: ", e);
-            throw new RuntimeException("Error sending OTP: " + e.getMessage());
+            String message = e.getMessage();
+            if (message == null || message.contains("null")) {
+                message = "Invalid request. Please check all required fields";
+            }
+            throw new RuntimeException(message);
         }
     }
 
     @Transactional
-    public AuthResponse verifyOtp(String mobile, String otp) {
+    public ApiResponse<OtpResponse> verifyOtp(OtpVerificationRequest request) {
         try {
-            System.out.println("Verifying OTP for mobile: " + mobile);
-            
-            // Find or create user
-            User user = userRepository.findByMobile(mobile)
-                    .orElseGet(() -> {
-                        System.out.println("Creating new user for mobile: " + mobile);
-                        User newUser = new User();
-                        newUser.setMobile(mobile);
-                        newUser.setUserUid(UidGenerator.generateUserId());
-                        newUser.setMemberUid(UidGenerator.generateMemberId());
-                        newUser.setOtp(otp);
-                        newUser.setExpiryTime(LocalDateTime.now().plusMinutes(5));
-                        newUser.setVerified(false);
-                        newUser.setRole(UserRole.MEMBER);
-                        return userRepository.save(newUser);
-                    });
+            User user = userRepository.findByMobile(request.getMobile())
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-            if (!user.getOtp().equals(otp)) {
-                return AuthResponse.builder()
-                        .message("Invalid OTP")
-                        .success(false)
-                        .build();
+            if (!user.getOtp().equals(request.getOtp())) {
+                return ApiResponse.error("Invalid OTP", HttpStatus.BAD_REQUEST);
+            }
+
+            if (user.getExpiryTime().isBefore(LocalDateTime.now())) {
+                return ApiResponse.error("OTP has expired", HttpStatus.BAD_REQUEST);
+            }
+
+            // Generate JWT token
+            String token = jwtUtil.generateToken(request.getMobile());
+            user.setCurrentToken(token);
+            
+            // Create family if user is HEAD and doesn't have a family
+            if (user.getRole() == UserRole.HEAD && user.getFamily() == null) {
+                Family family = new Family();
+                family.setFamilyUid("FAM" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS")));
+                family.setFamilyName(user.getFirstName()); // Using firstName as familyName from registration
+                family.setMembers(new ArrayList<>());
+                family = familyRepository.save(family);
+                
+                user.setFamily(family);
+                user.setVerified(true);
             }
             
-            // Generate and store token
-            String token = jwtUtil.generateToken(mobile);
-            user.setCurrentToken(token);
-            user.setVerified(true);
-            
-            // Ensure user is saved
-            user = userRepository.save(user);
-            System.out.println("User saved with ID: " + user.getId() + ", Mobile: " + user.getMobile());
+            userRepository.save(user);
 
-            return AuthResponse.builder()
+            return ApiResponse.success(
+                OtpResponse.builder()
                     .message("OTP verified successfully")
                     .token(token)
                     .role(user.getRole().toString())
+                    .familyName(user.getFamily() != null ? user.getFamily().getFamilyName() : user.getFirstName())
+                    .familyUid(user.getFamily() != null ? user.getFamily().getFamilyUid() : null)
+                    .mobile(user.getMobile())
+                    .isVerified(user.isVerified())
+                    .isFamilyHead(user.isFamilyHead())
                     .success(true)
-                    .build();
+                    .build(),
+                "OTP verified successfully"
+            );
         } catch (Exception e) {
-            System.out.println("Error in verifyOtp: " + e.getMessage());
-            e.printStackTrace();
             throw new RuntimeException("Error verifying OTP: " + e.getMessage());
         }
     }
 
     private String generateOtp() {
-        Random random = new Random();
-        return String.format("%06d", random.nextInt(1000000));
+        return String.format("%06d", new Random().nextInt(1000000));
     }
 
     private String generateFamilyId() {
@@ -265,5 +289,196 @@ public class AuthService {
             .role(admin.getRole().toString())
             .success(true)
             .build();
+    }
+
+    @Transactional
+    public ApiResponse<LoginResponse> mobileLogin(MobileLoginRequest request) {
+        try {
+            User user = userRepository.findByMobile(request.getMobile())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+            if (!user.getOtp().equals(request.getOtp())) {
+                return ApiResponse.error("Invalid OTP", HttpStatus.BAD_REQUEST);
+            }
+
+            String token = jwtUtil.generateToken(user.getMobile());
+            user.setCurrentToken(token);
+            userRepository.save(user);
+
+            LoginResponse response = buildLoginResponse(user);
+            return ApiResponse.success(response, "Login successful");
+        } catch (Exception e) {
+            throw new RuntimeException("Login failed: " + e.getMessage());
+        }
+    }
+
+    private LoginResponse buildLoginResponse(User user) {
+        Family family = user.getFamily();
+        List<LoginResponse.FamilyMemberDetails> familyMembers = new ArrayList<>();
+
+        if (family != null && user.isFamilyHead()) {
+            familyMembers = family.getMembers().stream()
+                .filter(member -> !member.getId().equals(user.getId()))
+                .<LoginResponse.FamilyMemberDetails>map(member -> LoginResponse.FamilyMemberDetails.builder()
+                    .memberUid(member.getMemberUid())
+                    .firstName(member.getFirstName())
+                    .lastName(member.getLastName())
+                    .mobile(member.getMobile())
+                    .relation(member.getRelation())
+                    .profilePicture(member.getProfilePicture())
+                    .photos(member.getPhotos())
+                    .build())
+                .collect(Collectors.toList());
+        }
+
+        return LoginResponse.builder()
+            .token(user.getCurrentToken())
+            .mobile(user.getMobile())
+            .role(user.getRole().toString())
+            .familyUid(family != null ? family.getFamilyUid() : null)
+            .familyName(family != null ? family.getFamilyName() : null)
+            .userDetails(LoginResponse.UserDetails.builder()
+                .userUid(user.getUserUid())
+                .firstName(user.getFirstName())
+                .lastName(user.getLastName())
+                .email(user.getEmail())
+                .profilePicture(user.getProfilePicture())
+                .photos(user.getPhotos())
+                .isFamilyHead(user.isFamilyHead())
+                .build())
+            .familyMembers(familyMembers)
+            .build();
+    }
+
+    @Transactional
+    public ApiResponse<OtpResponse> sendLoginOtp(OtpRequest request) {
+        try {
+            // Check if mobile number exists
+            if (!userRepository.existsByMobile(request.getMobile())) {
+                return ApiResponse.error(
+                    "Mobile number not registered. Please register first", 
+                    HttpStatus.NOT_FOUND
+                );
+            }
+
+            User user = userRepository.findByMobile(request.getMobile()).get();
+            
+            // Generate and save OTP
+            String otp = generateOtp();
+            user.setOtp(otp);
+            user.setExpiryTime(LocalDateTime.now().plusMinutes(5));
+            userRepository.save(user);
+
+            return ApiResponse.success(
+                OtpResponse.builder()
+                    .message("Login OTP sent successfully")
+                    .otp(otp)  // Remove in production
+                    .role(user.getRole().toString())
+                    .familyName(user.getFamily() != null ? user.getFamily().getFamilyName() : null)
+                    .familyUid(user.getFamily() != null ? user.getFamily().getFamilyUid() : null)
+                    .mobile(user.getMobile())
+                    .isVerified(user.isVerified())
+                    .isFamilyHead(user.isFamilyHead())
+                    .success(true)
+                    .build(),
+                "OTP sent successfully"
+            );
+        } catch (Exception e) {
+            throw new RuntimeException("Error sending OTP: " + e.getMessage());
+        }
+    }
+
+    @Transactional
+    public ApiResponse<OtpResponse> handleOtpRequest(OtpRequest request) {
+        try {
+            // Validate mobile number
+            if (request.getMobile() == null || request.getMobile().trim().isEmpty()) {
+                throw new RuntimeException("Mobile number is required");
+            }
+
+            boolean userExists = userRepository.existsByMobile(request.getMobile());
+
+            // Case 1: Only mobile number provided (Login attempt)
+            if (request.getRole() == null && request.getFamilyName() == null) {
+                if (!userExists) {
+                    return ApiResponse.error(
+                        "Mobile number not registered. Please register with role and family name", 
+                        HttpStatus.NOT_FOUND
+                    );
+                }
+                return handleLogin(request.getMobile());
+            }
+
+            // Case 2: All parameters provided (Registration attempt)
+            if (userExists) {
+                return ApiResponse.error(
+                    "Mobile number already registered. Please login with mobile number only", 
+                    HttpStatus.BAD_REQUEST
+                );
+            }
+            return handleRegistration(request);
+        } catch (Exception e) {
+            throw new RuntimeException(e.getMessage());
+        }
+    }
+
+    private ApiResponse<OtpResponse> handleLogin(String mobile) {
+        User user = userRepository.findByMobile(mobile).get();
+        String otp = generateOtp();
+        user.setOtp(otp);
+        user.setExpiryTime(LocalDateTime.now().plusMinutes(5));
+        userRepository.save(user);
+
+        return ApiResponse.success(
+            OtpResponse.builder()
+                .message("Login OTP sent successfully")
+                .otp(otp)  // Remove in production
+                .role(user.getRole().toString())
+                .familyName(user.getFamily() != null ? user.getFamily().getFamilyName() : null)
+                .mobile(user.getMobile())
+                .isVerified(user.isVerified())
+                .isFamilyHead(user.isFamilyHead())
+                .success(true)
+                .build(),
+            "Login OTP sent successfully"
+        );
+    }
+
+    private ApiResponse<OtpResponse> handleRegistration(OtpRequest request) {
+        // Validate registration fields
+        if (request.getRole() == null) {
+            throw new RuntimeException("Please select role (HEAD/MEMBER) for registration");
+        }
+        if (request.getFamilyName() == null || request.getFamilyName().trim().isEmpty()) {
+            throw new RuntimeException("Please enter family name for registration");
+        }
+
+        // Create new user
+        User newUser = new User();
+        newUser.setMobile(request.getMobile());
+        newUser.setRole(UserRole.valueOf(request.getRole().toUpperCase()));
+        newUser.setFirstName(request.getFamilyName());
+        newUser.setUserUid(UidGenerator.generateUserId());
+        newUser.setMemberUid(UidGenerator.generateMemberId());
+        newUser.setFamilyHead(UserRole.valueOf(request.getRole().toUpperCase()) == UserRole.HEAD);
+
+        String otp = generateOtp();
+        newUser.setOtp(otp);
+        newUser.setExpiryTime(LocalDateTime.now().plusMinutes(5));
+        newUser = userRepository.save(newUser);
+
+        return ApiResponse.success(
+            OtpResponse.builder()
+                .message("Registration OTP sent successfully")
+                .otp(otp)  // Remove in production
+                .role(newUser.getRole().toString())
+                .familyName(newUser.getFirstName())
+                .mobile(newUser.getMobile())
+                .isVerified(false)
+                .isFamilyHead(newUser.isFamilyHead())
+                .success(true)
+                .build(),
+            "New user registration initiated"
+        );
     }
 } 

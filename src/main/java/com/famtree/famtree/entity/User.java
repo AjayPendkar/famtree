@@ -11,6 +11,7 @@ import lombok.AllArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Data
@@ -78,6 +79,15 @@ public class User {
     
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+    
+    private String profilePicture;  // URL or path to profile picture
+    
+    @ElementCollection
+    @CollectionTable(name = "user_photos", joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "photo_url")
+    private List<String> photos;  // List of photo URLs/paths
+    
+    private String relation;  // Add this field for storing relationship to family head
     
     @PrePersist
     protected void onCreate() {

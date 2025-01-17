@@ -31,6 +31,8 @@ public class FamilyResponse {
         private String mobile;
         private String relation;
         private String verificationCode;
+        private String profilePicture;
+        private List<String> photos;
     }
 
     @Data
@@ -56,5 +58,8 @@ public class FamilyResponse {
         private String address;
         private UserRole role;
         private boolean isVerified;
+        private boolean isFamilyHead;
+        private String profilePicture;
+        private List<String> photos;
     }
 } 

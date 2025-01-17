@@ -68,6 +68,13 @@ public class PendingMember {
     @Enumerated(EnumType.STRING)
     private MaritalStatus maritalStatus;
     
+    private String profilePicture;
+    
+    @ElementCollection
+    @CollectionTable(name = "pending_member_photos", joinColumns = @JoinColumn(name = "member_id"))
+    @Column(name = "photo_url")
+    private List<String> photos;
+    
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
