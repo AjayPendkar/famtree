@@ -18,4 +18,5 @@ public interface PendingMemberRepository extends JpaRepository<PendingMember, Lo
     Optional<PendingMember> findByMobileAndFamily(String mobile, Family family);
     boolean existsByMobileAndIsVerifiedFalse(String mobile);
     void deleteByFamily(Family family);
+    int countByFamily(Family family);
 } 

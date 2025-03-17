@@ -150,7 +150,19 @@ public class AuthService {
 
             // Generate JWT token
             String token = jwtUtil.generateToken(request.getMobile());
+            
+            // Store token for this device
             user.setCurrentToken(token);
+            
+            // Initialize device tokens list if null
+            if (user.getDeviceTokens() == null) {
+                user.setDeviceTokens(new ArrayList<>());
+            }
+            
+            // Add token to device tokens if not already present
+            if (!user.getDeviceTokens().contains(token)) {
+                user.getDeviceTokens().add(token);
+            }
             
             // Create family if user is HEAD and doesn't have a family
             if (user.getRole() == UserRole.HEAD && user.getFamily() == null) {
@@ -281,7 +293,20 @@ public class AuthService {
         }
 
         String token = jwtUtil.generateToken(admin.getEmail());
+        
+        // Store token for this device
         admin.setCurrentToken(token);
+        
+        // Initialize device tokens list if null
+        if (admin.getDeviceTokens() == null) {
+            admin.setDeviceTokens(new ArrayList<>());
+        }
+        
+        // Add token to device tokens if not already present
+        if (!admin.getDeviceTokens().contains(token)) {
+            admin.getDeviceTokens().add(token);
+        }
+        
         userRepository.save(admin);
 
         return AuthResponse.builder()
@@ -302,7 +327,20 @@ public class AuthService {
             }
 
             String token = jwtUtil.generateToken(user.getMobile());
+            
+            // Store token for this device
             user.setCurrentToken(token);
+            
+            // Initialize device tokens list if null
+            if (user.getDeviceTokens() == null) {
+                user.setDeviceTokens(new ArrayList<>());
+            }
+            
+            // Add token to device tokens if not already present
+            if (!user.getDeviceTokens().contains(token)) {
+                user.getDeviceTokens().add(token);
+            }
+            
             userRepository.save(user);
 
             LoginResponse response = buildLoginResponse(user);
@@ -480,5 +518,49 @@ public class AuthService {
                 .build(),
             "New user registration initiated"
         );
+    }
+
+    @Transactional
+    public void logout(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new RuntimeException("Invalid token format");
+        }
+        
+        String token = authHeader.substring(7);
+        String mobile = jwtUtil.getMobileFromToken(token);
+        
+        User user = userRepository.findByMobile(mobile)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        // Remove this specific token from device tokens
+        if (user.getDeviceTokens() != null) {
+            user.getDeviceTokens().remove(token);
+        }
+        
+        // If this was the current token, clear it
+        if (token.equals(user.getCurrentToken())) {
+            user.setCurrentToken(null);
+        }
+        
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void logoutAllDevices(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new RuntimeException("Invalid token format");
+        }
+        
+        String token = authHeader.substring(7);
+        String mobile = jwtUtil.getMobileFromToken(token);
+        
+        User user = userRepository.findByMobile(mobile)
+            .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        // Clear all device tokens
+        user.setDeviceTokens(new ArrayList<>());
+        user.setCurrentToken(null);
+        
+        userRepository.save(user);
     }
 } 

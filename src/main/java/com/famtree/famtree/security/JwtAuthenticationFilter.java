@@ -24,6 +24,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.Arrays;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -36,22 +37,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private UserRepository userRepository;
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String path = request.getRequestURI();
+        
+        // Skip authentication for these paths
+        return path.startsWith("/api/auth/") || 
+               path.startsWith("/api/images/") || 
+               path.startsWith("/data/user/") ||
+               path.contains("swagger") ||
+               path.contains("api-docs") ||
+               path.contains("webjars");
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         try {
-            // Skip authentication for permitted endpoints
-            String path = request.getRequestURI();
-            if (path.startsWith("/api/auth/")) {
-                filterChain.doFilter(request, response);
-                return;
-            }
-
+            // If shouldNotFilter returns true, this code won't execute for those paths
             String token = getTokenFromRequest(request);
             if (token == null) {
                 sendErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, "No token provided", request);
                 return;
             }
 
+            String path = request.getRequestURI();
             System.out.println("Processing request for path: " + path);
             System.out.println("Token received: " + token);
 
@@ -82,7 +91,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             System.out.println("Found user: " + user.getFirstName() + " with mobile: " + user.getMobile());
 
             // Verify token matches stored token
-            if (!token.equals(user.getCurrentToken())) {
+            if (!token.equals(user.getCurrentToken()) && (user.getDeviceTokens() == null || !user.getDeviceTokens().contains(token))) {
                 System.out.println("Token mismatch. Stored: " + user.getCurrentToken());
                 sendErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, 
                     "Invalid token. Please login again.", request);

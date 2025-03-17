@@ -22,6 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.famtree.famtree.dto.PendingMemberRequest;
 import com.famtree.famtree.dto.PendingMemberResponse;
 import com.famtree.famtree.enums.UserRole;
+import com.famtree.famtree.service.ImageService;
+import org.springframework.web.multipart.MultipartFile;
+import java.io.IOException;
 
 import java.time.LocalDate;
 import java.util.UUID;
@@ -40,6 +43,7 @@ public class FamilyService {
     private final UserRepository userRepository;
     private final JwtUtil jwtUtil;
     private final PendingMemberRepository pendingMemberRepository;
+    private final ImageService imageService;
 
     @Transactional
     public FamilyResponse completeFamilyRegistration(String token, FamilyDetailsRequest request) {
@@ -521,5 +525,39 @@ public class FamilyService {
         
         // Now delete the family
         familyRepository.delete(family);
+    }
+
+    public void updateFamilyPhoto(String familyUid, MultipartFile photo) throws IOException {
+        Family family = familyRepository.findByFamilyUid(familyUid)
+            .orElseThrow(() -> new RuntimeException("Family not found"));
+            
+        String photoUrl = imageService.uploadImage(photo);
+        family.setFamilyPhoto(photoUrl);
+        familyRepository.save(family);
+    }
+
+    public void updateMemberPhoto(String memberUid, MultipartFile photo) throws IOException {
+        User member = userRepository.findByMemberUid(memberUid)
+            .orElseThrow(() -> new RuntimeException("Member not found"));
+            
+        String photoUrl = imageService.uploadImage(photo);
+        member.setProfilePicture(photoUrl);
+        userRepository.save(member);
+    }
+
+    @Transactional
+    public void addMemberPhotos(String memberUid, List<String> photoUrls) {
+        User member = userRepository.findByMemberUid(memberUid)
+            .orElseThrow(() -> new RuntimeException("Member not found"));
+        
+        // Initialize photos list if null
+        if (member.getPhotos() == null) {
+            member.setPhotos(new ArrayList<>());
+        }
+        
+        // Add new photos
+        member.getPhotos().addAll(photoUrls);
+        
+        userRepository.save(member);
     }
 } 

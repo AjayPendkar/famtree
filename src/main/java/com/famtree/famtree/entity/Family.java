@@ -21,7 +21,8 @@ public class Family {
     private String familyName;
     private String address;
     private String description;
-    private Integer totalMemberCount;
+    @Column(name = "total_member_count")
+    private Integer totalMemberCount = 0;
     private String uniqueIdentifier;
     
     @Column(name = "is_blocked", nullable = false)
@@ -32,6 +33,8 @@ public class Family {
     
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    
+    private String familyPhoto;
     
     @PrePersist
     protected void onCreate() {

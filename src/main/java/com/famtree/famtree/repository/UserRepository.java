@@ -19,4 +19,5 @@ public interface UserRepository extends JpaRepository<User, Long> {
     long countByMobile(String mobile);
     Optional<User> findByFamilyAndIsFamilyHeadIsTrue(Family family);
     List<User> findByIsFamilyHeadTrue();
+    Optional<User> findByMemberUid(String memberUid);
 } 

@@ -12,4 +12,5 @@ public interface ConnectionRequestRepository extends JpaRepository<ConnectionReq
     List<ConnectionRequest> findByRequesterFamilyAndStatus(Family family, ConnectionStatus status);
     List<ConnectionRequest> findByReceiverFamilyAndStatus(Family family, ConnectionStatus status);
     long countByRequesterFamilyAndStatus(Family family, ConnectionStatus status);
+    int countByReceiverFamilyAndStatus(Family family, ConnectionStatus status);
 } 

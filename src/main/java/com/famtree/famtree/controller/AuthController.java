@@ -88,4 +88,26 @@ public class AuthController {
     public ResponseEntity<ApiResponse<OtpResponse>> sendLoginOtp(@RequestBody OtpRequest request) {
         return ResponseEntity.ok(authService.sendLoginOtp(request));
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<?>> logout(@RequestHeader("Authorization") String token) {
+        try {
+            authService.logout(token);
+            return ResponseEntity.ok(ApiResponse.success(null, "Logged out successfully"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest()
+                .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
+        }
+    }
+
+    @PostMapping("/logout/all-devices")
+    public ResponseEntity<ApiResponse<?>> logoutAllDevices(@RequestHeader("Authorization") String token) {
+        try {
+            authService.logoutAllDevices(token);
+            return ResponseEntity.ok(ApiResponse.success(null, "Logged out from all devices successfully"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest()
+                .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
+        }
+    }
 } 

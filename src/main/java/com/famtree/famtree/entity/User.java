@@ -12,6 +12,7 @@ import lombok.AllArgsConstructor;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.ArrayList;
 
 @Entity
 @Data
@@ -72,7 +73,13 @@ public class User {
     private Family family;
     
     // Token storage
+    @Column(name = "current_token", columnDefinition = "TEXT")
     private String currentToken;
+    
+    @ElementCollection
+    @CollectionTable(name = "user_device_tokens", joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "device_token", columnDefinition = "TEXT")
+    private List<String> deviceTokens = new ArrayList<>();
     
     @Column(name = "created_at")
     private LocalDateTime createdAt;
