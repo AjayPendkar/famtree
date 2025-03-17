@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import java.io.File;
+import org.springframework.http.MediaType;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,8 +25,11 @@ public class ImageService {
     private String baseUrl;
 
     public String uploadImage(MultipartFile file) throws IOException {
+        validateImage(file);
+        
         // Generate unique filename
-        String filename = UUID.randomUUID().toString() + "_" + file.getOriginalFilename();
+        String originalFilename = file.getOriginalFilename();
+        String filename = UUID.randomUUID().toString() + "_" + originalFilename;
         
         // Create temporary file
         Path tempFile = Files.createTempFile("upload_", "_" + filename);
@@ -41,8 +44,32 @@ public class ImageService {
         }
     }
 
+    private void validateImage(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("File is empty");
+        }
+        
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.toLowerCase().startsWith("image/")) {
+            throw new IllegalArgumentException("File must be an image. Received type: " + contentType);
+        }
+        
+        // 10MB limit
+        if (file.getSize() > 10 * 1024 * 1024) {
+            throw new IllegalArgumentException("File size exceeds 10MB limit");
+        }
+    }
+
     public byte[] getImage(String filename) throws IOException {
+        if (filename == null || filename.trim().isEmpty()) {
+            throw new IllegalArgumentException("Filename cannot be empty");
+        }
+        
         Path filePath = Paths.get(uploadDir, filename);
+        if (!Files.exists(filePath)) {
+            throw new IOException("Image not found: " + filename);
+        }
+        
         return Files.readAllBytes(filePath);
     }
 } 

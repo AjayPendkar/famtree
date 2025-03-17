@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.HashMap;
 import org.springframework.web.multipart.MultipartFile;
 import com.famtree.famtree.service.ImageService;
 import java.io.IOException;
@@ -36,16 +37,17 @@ public class FamilyController {
             @RequestPart(value = "headPhotos", required = false) MultipartFile[] headPhotos,
             @RequestPart(value = "memberPhotos", required = false) Map<String, MultipartFile[]> memberPhotos) {
         try {
-            // Convert JSON string to FamilyDetailsRequest
             FamilyDetailsRequest request = objectMapper.readValue(requestJson, FamilyDetailsRequest.class);
+            Map<String, Object> responseData = new HashMap<>();
             
-            // Process head profile image if provided
+            // Process head profile image
             if (headProfileImage != null) {
                 String imageUrl = imageService.uploadImage(headProfileImage);
                 request.getFamilyHead().setProfilePicture(imageUrl);
+                responseData.put("headProfileImage", imageUrl);
             }
             
-            // Process head additional photos if provided
+            // Process head photos
             if (headPhotos != null && headPhotos.length > 0) {
                 List<String> photoUrls = new ArrayList<>();
                 for (MultipartFile photo : headPhotos) {
@@ -53,9 +55,11 @@ public class FamilyController {
                     photoUrls.add(photoUrl);
                 }
                 request.getFamilyHead().setPhotos(photoUrls);
+                responseData.put("headPhotos", photoUrls);
             }
             
-            // Process member photos if provided
+            // Process member photos
+            Map<String, List<String>> memberPhotoUrls = new HashMap<>();
             if (memberPhotos != null && !memberPhotos.isEmpty()) {
                 for (int i = 0; i < request.getMembers().size(); i++) {
                     String key = "member" + i;
@@ -68,9 +72,11 @@ public class FamilyController {
                                 photoUrls.add(photoUrl);
                             }
                             request.getMembers().get(i).setPhotos(photoUrls);
+                            memberPhotoUrls.put(key, photoUrls);
                         }
                     }
                 }
+                responseData.put("memberPhotos", memberPhotoUrls);
             }
 
             FamilyResponse response = familyService.completeFamilyRegistration(token, request);
@@ -78,12 +84,14 @@ public class FamilyController {
                 return ResponseEntity.ok(ApiResponse.builder()
                     .status(HttpStatus.OK.value())
                     .message("User already registered as family head")
-                    .data(null)
+                    .data(response)
                     .build());
             }
-            return ResponseEntity.ok(ApiResponse.success(response, "Family registration completed successfully"));
+            
+            responseData.put("family", response);
+            return ResponseEntity.ok(ApiResponse.success(responseData, "Family registration completed successfully"));
         } catch (Exception e) {
-            return ResponseEntity.badRequest()
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
         }
     }
@@ -138,28 +146,30 @@ public class FamilyController {
             @RequestHeader("Authorization") String token,
             @RequestBody FamilyDetailsRequest request) {
         try {
-            // For mobile requests, we accept the local file paths and handle them in the service
-            // The mobile app will later upload these files separately
-            
             FamilyResponse response = familyService.completeFamilyRegistration(token, request);
-            if (response.getFamilyHead() != null && response.getFamilyHead().isVerified() && response.getFamilyUid() == null) {
-                return ResponseEntity.ok(ApiResponse.builder()
-                    .status(HttpStatus.OK.value())
-                    .message("User already registered as family head")
-                    .data(null)
-                    .build());
-            }
-            return ResponseEntity.ok(ApiResponse.success(response, "Family registration completed successfully"));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest()
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("family", response);
+            
+            return ResponseEntity.ok(ApiResponse.success(responseData, "Family registration completed successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
         }
     }
 
     @GetMapping("/heads")
     public ResponseEntity<ApiResponse<?>> getAllFamilyHeads() {
-        List<FamilyHeadResponse> heads = familyService.getAllFamilyHeads();
-        return ResponseEntity.ok(ApiResponse.success(heads, "Family heads retrieved successfully"));
+        try {
+            List<FamilyHeadResponse> heads = familyService.getAllFamilyHeads();
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("heads", heads);
+            responseData.put("count", heads.size());
+            
+            return ResponseEntity.ok(ApiResponse.success(responseData, "Family heads retrieved successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
+        }
     }
 
     @PutMapping("/update-profile")
@@ -168,10 +178,12 @@ public class FamilyController {
             @RequestBody FamilyDetailsRequest request) {
         try {
             FamilyResponse response = familyService.updateFamilyProfile(token, request);
-            return ResponseEntity.ok(ApiResponse.success(response, "Family profile updated successfully"));
-        } catch (RuntimeException e) {
-            return ResponseEntity
-                .badRequest()
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("family", response);
+            
+            return ResponseEntity.ok(ApiResponse.success(responseData, "Family profile updated successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
         }
     }
@@ -197,22 +209,33 @@ public class FamilyController {
             @RequestBody PendingMemberRequest request) {
         try {
             PendingMemberResponse response = familyService.addPendingMember(token, familyUid, request);
-            return ResponseEntity.ok(ApiResponse.success(response, "Pending member added successfully"));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest()
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("member", response);
+            responseData.put("familyUid", familyUid);
+            
+            return ResponseEntity.ok(ApiResponse.success(responseData, "Pending member added successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
         }
     }
 
     @PostMapping("/{familyUid}/photo")
-    public ResponseEntity<?> updateFamilyPhoto(
+    public ResponseEntity<ApiResponse<?>> updateFamilyPhoto(
             @PathVariable String familyUid,
             @RequestParam("photo") MultipartFile photo) {
         try {
+            String photoUrl = imageService.uploadImage(photo);
             familyService.updateFamilyPhoto(familyUid, photo);
-            return ResponseEntity.ok().build();
+            
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("photoUrl", photoUrl);
+            responseData.put("familyUid", familyUid);
+            
+            return ResponseEntity.ok(ApiResponse.success(responseData, "Family photo updated successfully"));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
         }
     }
 
@@ -229,7 +252,7 @@ public class FamilyController {
     }
     
     @PostMapping("/members/{memberUid}/photos")
-    public ResponseEntity<?> addMemberPhotos(
+    public ResponseEntity<ApiResponse<?>> addMemberPhotos(
             @PathVariable String memberUid,
             @RequestParam("photos") MultipartFile[] photos) {
         try {
@@ -239,9 +262,16 @@ public class FamilyController {
                 photoUrls.add(photoUrl);
             }
             familyService.addMemberPhotos(memberUid, photoUrls);
-            return ResponseEntity.ok(ApiResponse.success(photoUrls, "Member photos added successfully"));
+            
+            Map<String, Object> responseData = new HashMap<>();
+            responseData.put("photoUrls", photoUrls);
+            responseData.put("memberUid", memberUid);
+            responseData.put("count", photoUrls.size());
+            
+            return ResponseEntity.ok(ApiResponse.success(responseData, "Member photos added successfully"));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(e.getMessage(), HttpStatus.BAD_REQUEST));
         }
     }
 } 
