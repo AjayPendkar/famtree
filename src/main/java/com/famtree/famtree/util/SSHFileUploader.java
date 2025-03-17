@@ -19,19 +19,19 @@ public class SSHFileUploader {
     @Value("${ssh.user:u710971409}")
     private String sshUser;
 
-    @Value("${ssh.password:Msskmsksmk2@}")
+    @Value("${ssh.password:Mskmskmsk2@}")
     private String sshPassword;
 
-    @Value("${ssh.remote.dir:/home/u710971409/public_html/uploads/}")
+    @Value("${ssh.remote.dir:/home/u710971409/domains/purify.fit/public_html/uploads/}")
     private String remoteDir;
 
-    @Value("${ssh.base.url:https://yourdomain.com/uploads/}")
+    @Value("${ssh.base.url:https://purify.fit/uploads/}")
     private String baseUrl;
 
     public String uploadFile(String localFilePath, String remoteFileName) {
         Session session = null;
         Channel channel = null;
-        ChannelExec channelExec = null;
+        ChannelSftp sftpChannel = null;
         try {
             JSch jsch = new JSch();
             session = jsch.getSession(sshUser, sshHost, sshPort);
@@ -39,37 +39,52 @@ public class SSHFileUploader {
             session.setConfig("StrictHostKeyChecking", "no");
             session.connect();
 
-            boolean isDirExist = checkAndCreateDirectory(session, remoteDir);
-            if (!isDirExist) {
-                throw new RuntimeException("Failed to create remote directory!");
+            channel = session.openChannel("sftp");
+            channel.connect();
+            sftpChannel = (ChannelSftp) channel;
+
+            // Create directory if it doesn't exist and set permissions
+            try {
+                try {
+                    sftpChannel.mkdir(remoteDir);
+                } catch (SftpException e) {
+                    // Directory might already exist, ignore the error
+                }
+                // Set directory permissions to 755 (rwxr-xr-x)
+                sftpChannel.chmod(0755, remoteDir);
+            } catch (SftpException e) {
+                // Log error but continue
+                System.err.println("Warning: Could not set directory permissions: " + e.getMessage());
             }
 
-            channel = session.openChannel("exec");
-            channelExec = (ChannelExec) channel;
-
-            String command = "scp -t " + remoteDir + remoteFileName;
-            channelExec.setCommand(command);
-
-            OutputStream out = channelExec.getOutputStream();
-            channelExec.connect();
-
+            // Upload the file
             File file = new File(localFilePath);
             FileInputStream fis = new FileInputStream(file);
-            byte[] buffer = new byte[1024];
-
-            while (fis.read(buffer) > 0) {
-                out.write(buffer);
-            }
-            out.flush();
+            sftpChannel.put(fis, remoteDir + remoteFileName);
             fis.close();
-            out.close();
+
+            try {
+                // Set file permissions to 644 (rw-r--r--)
+                sftpChannel.chmod(0644, remoteDir + remoteFileName);
+            } catch (SftpException e) {
+                // Log error but continue
+                System.err.println("Warning: Could not set file permissions: " + e.getMessage());
+            }
+
+            // Execute a command to ensure proper ownership
+            Channel execChannel = session.openChannel("exec");
+            ((ChannelExec) execChannel).setCommand(
+                "chown " + sshUser + ":" + sshUser + " " + remoteDir + remoteFileName
+            );
+            execChannel.connect();
+            execChannel.disconnect();
 
             return baseUrl + remoteFileName;
 
         } catch (Exception e) {
             throw new RuntimeException("Error uploading file via SSH: " + e.getMessage(), e);
         } finally {
-            if (channelExec != null) channelExec.disconnect();
+            if (sftpChannel != null) sftpChannel.disconnect();
             if (channel != null) channel.disconnect();
             if (session != null) session.disconnect();
         }
